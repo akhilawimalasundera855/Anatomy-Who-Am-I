@@ -59,8 +59,15 @@ def call_professor(prompt_type, user_input="", structure=""):
     prompts = {
         "start": (f"You are a Senior Anatomy Professor. Select ONE anatomical structure from {random_region}. "
                   f"Provide 3 clues for {difficulty} level: Regional, Clinical, Surgical. [ANSWER: structure_name]"),
-        "verify": (f"Target: '{structure}'. Student Guest: '{user_input}'. "
-                   "Is this the same anatomical structure? You MUST accept synonyms and variations. Answer ONLY 'YES' or 'NO'."),
+"verify": (f"Target: '{structure}'. Student Guess: '{user_input}'. "
+                   "Role: You are a clinical anatomy examiner. "
+                   "Task: Is the guess correct? Answer ONLY 'YES' or 'NO'. "
+                   "GUIDELINES: "
+                   "1. Be STRICT on location: If they guess a different structure in the same region, answer NO. "
+                   "2. Be FLEXIBLE on nomenclature: Accept standard synonyms (e.g., 'Lens' or 'Eye lens' for 'Ocular lens'). "
+                   "3. Be SMART on abbreviations: Accept 'Sciatic' for 'Sciatic Nerve' or 'Radial' for 'Radial artery'. "
+                   "4. Reject vague answers: 'Nerve', 'Bone', or 'Artery' alone are always NO. "
+                   "Answer ONLY 'YES' or 'NO'."),
         "hint": (f"The student guessed '{user_input}' for '{structure}' and was wrong. Provide ONE new specific clue."),
         "reveal": (f"The answer was {structure}. Provide a structured 'Educational Synthesis' for a {difficulty} level: "
                    "1. The Answer (with synonyms), 2. Synthesis of Clues, 3. A High-Yield Clinical Pearl.")
