@@ -49,21 +49,25 @@ def call_professor(prompt_type, user_input="", structure=""):
     payload = {"contents": [{"role": "user", "parts": [{"text": prompts[prompt_type]}]}]}
 
     # ROTATION LOGIC: Try every key until one succeeds
-    for key in available_keys:
-        # High-capacity Lite model for group sessions
+# ADVANCED ROTATION: Try every key up to 2 times with a slight delay if busy
+    # This spreads the 13 students across the 1-minute quota window.
+    for attempt in range(len(available_keys) * 2):
+        key = available_keys[attempt % len(available_keys)]
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={key}"
+        
         try:
             response = requests.post(url, json=payload, timeout=12)
             if response.status_code == 200:
                 data = response.json()
                 return data['candidates'][0]['content']['parts'][0]['text'].strip()
             elif response.status_code == 429:
-                continue # Key limit hit, move to next key immediately
+                # Key is busy. Wait 1.5 seconds and try a different key.
+                time.sleep(1.5)
+                continue
         except Exception:
-            continue # Network glitch, move to next key
+            continue
             
-    return "⚠️ The Professor is temporarily busy. Please wait 10 seconds and resubmit."
-
+    return "The Professor is currently overwhelmed by students. Please wait 10 seconds and resubmit your guess."
 # --- 4. SIDEBAR & RESEARCH PORTAL ---
 st.set_page_config(page_title="Anatomy Who Am I", page_icon="🧬", layout="centered")
 
