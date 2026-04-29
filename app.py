@@ -22,14 +22,22 @@ def generate_verification_hash(student_id, marks):
     hash_object = hashlib.sha256(raw_string.encode())
     return f"UOM-{hash_object.hexdigest()[:6].upper()}"
 
-# --- 3. PERFECT KEY ROTATOR & AI ENGINE ---
+# --- 3. ROBUST AI ENGINE (STAGGERED ROTATION) ---
 def call_professor(prompt_type, user_input="", structure=""):
     difficulty = st.session_state.get('difficulty', 'Pre-clinical')
     
-    # Retrieves KEY1, KEY2, KEY3 from Streamlit Secrets
-    key_names = ["KEY1", "KEY2", "KEY3"]
-    available_keys = [st.secrets[k] for k in key_names if k in st.secrets]
-    random.shuffle(available_keys) # Ensures balanced load across your accounts
+    # Flexible Key Retrieval: Handles both individual keys and lists
+    all_keys = []
+    if "GEMINI_API_KEY" in st.secrets:
+        val = st.secrets["GEMINI_API_KEY"]
+        all_keys = list(val) if isinstance(val, list) else [val]
+    
+    # Also check for individual KEY1, KEY2, KEY3
+    for k in ["KEY1", "KEY2", "KEY3", "KEY4"]:
+        if k in st.secrets: all_keys.append(st.secrets[k])
+    
+    if not all_keys:
+        return "❌ ERROR: No API keys found in Streamlit Secrets."
 
     body_regions = ["Thorax", "Abdomen", "Pelvis", "Head and Neck", "Upper Limb", "Lower Limb", "Neuroanatomy", "Special Senses"]
     random_region = random.choice(body_regions)
@@ -91,20 +99,25 @@ if not raw_id:
     st.info("👋 Please enter your ID in the sidebar to begin.")
     st.stop()
 
-# STAGE: START ROUND
-if st.session_state.game_stage != "finished":
-    if not st.session_state.messages:
-        with st.spinner("Professor is selecting a structure..."):
-            full_res = call_professor("start")
-            if "[ANSWER:" in full_res:
-                st.session_state.current_structure = full_res.split("[ANSWER:")[1].split("]")[0].strip()
-                st.session_state.messages.append({"role": "assistant", "content": full_res.split("[ANSWER:")[0].strip()})
-    
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]): st.markdown(msg["content"])
+# STAGE: INITIALIZATION
+if st.session_state.game_stage == "playing" and st.session_state.current_structure is None:
+    # Adding a random stagger (0.5 to 2.5s) to prevent concurrent request collisions
+    time.sleep(random.uniform(0.5, 2.5))
+    with st.spinner("Professor is preparing your clues..."):
+        full_res = call_professor("start")
+        if "[ANSWER:" in full_res:
+            st.session_state.current_structure = full_res.split("[ANSWER:")[1].split("]")[0].strip()
+            st.session_state.messages.append({"role": "assistant", "content": full_res.split("[ANSWER:")[0].strip()})
+        else:
+            st.error(full_res)
+            if st.button("Retry Clue Generation"): st.rerun()
 
-# STAGE: PLAYING
-if st.session_state.game_stage == "playing":
+# DISPLAY MESSAGES
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]): st.markdown(msg["content"])
+
+# STAGE: GUESSING
+if st.session_state.game_stage == "playing" and st.session_state.current_structure:
     if prompt := st.chat_input("Enter your anatomical guess..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"): st.markdown(prompt)
@@ -114,7 +127,6 @@ if st.session_state.game_stage == "playing":
                 is_correct_raw = call_professor("verify", user_input=prompt, structure=st.session_state.current_structure)
             
             if "YES" in is_correct_raw.upper() and "NO" not in is_correct_raw.upper():
-                # Original marks logic: 30 for 1st try, 20 for 2nd, 10 for 3rd
                 marks_earned = [30, 20, 10][min(st.session_state.attempts, 2)]
                 st.session_state.total_marks += marks_earned
                 st.success(f"✅ CORRECT! (+{marks_earned} marks)")
@@ -128,7 +140,7 @@ if st.session_state.game_stage == "playing":
                 
             else:
                 if st.session_state.attempts >= 2:
-                    st.error(f"❌ Failed. The structure was the **{st.session_state.current_structure}**.")
+                    st.error(f"❌ Failed. Target: {st.session_state.current_structure}")
                     explanation = call_professor("reveal", structure=st.session_state.current_structure)
                     st.markdown(explanation)
                     st.session_state.messages.append({"role": "assistant", "content": f"❌ FAILED. {explanation}"})
@@ -141,7 +153,6 @@ if st.session_state.game_stage == "playing":
                     st.info(f"💡 Hint: {new_hint}")
                     st.session_state.messages.append({"role": "assistant", "content": f"❌ Incorrect. Hint: {new_hint}"})
 
-# STAGE: SUMMARY
 elif st.session_state.game_stage == "summary":
     st.divider()
     col1, col2 = st.columns(2)
@@ -158,12 +169,11 @@ elif st.session_state.game_stage == "summary":
             st.session_state.game_stage = "finished"
             st.rerun()
 
-# STAGE: FINISHED
 elif st.session_state.game_stage == "finished":
-    v_hash = generate_verification_hash(display_id, st.session_state.total_marks)
+    v_hash = generate_verification_hash(raw_id, st.session_state.total_marks)
     st.success("Session Completed!")
     st.subheader("🏁 Performance Record")
-    st.code(f"ID: {display_id} | Total Marks: {st.session_state.total_marks} | Hash: {v_hash}")
+    st.code(f"ID: {raw_id} | Total Marks: {st.session_state.total_marks} | Hash: {v_hash}")
     st.info("📸 Please take a screenshot for your evaluation record.")
     if st.button("Start New Session"):
         st.session_state.clear()
