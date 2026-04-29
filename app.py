@@ -15,15 +15,12 @@ if "current_structure" not in st.session_state: st.session_state.current_structu
 if "round_start_time" not in st.session_state: st.session_state.round_start_time = time.time()
 if "game_stage" not in st.session_state: st.session_state.game_stage = "playing"
 
-# --- 2. RESEARCH UTILITIES (EXACT REPLICA) ---
+# --- 2. RESEARCH UTILITIES (RETAINED) ---
 def generate_verification_hash(student_id, marks):
+    """Generates the unique research code at the end of the session."""
     raw_string = f"{student_id}-{marks}-{st.session_state.session_id}"
     hash_object = hashlib.sha256(raw_string.encode())
     return f"UOM-{hash_object.hexdigest()[:6].upper()}"
-
-def log_to_cloud(data_dict):
-    """Placeholder to maintain original function structure; bypassed for stability."""
-    pass
 
 # --- 3. PERFECT KEY ROTATOR & AI ENGINE ---
 def call_professor(prompt_type, user_input="", structure=""):
@@ -53,7 +50,7 @@ def call_professor(prompt_type, user_input="", structure=""):
 
     # ROTATION LOGIC: Try every key until one succeeds
     for key in available_keys:
-        # UPDATED FOR 2026: High-capacity Lite model for group sessions
+        # High-capacity Lite model for group sessions
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={key}"
         try:
             response = requests.post(url, json=payload, timeout=12)
