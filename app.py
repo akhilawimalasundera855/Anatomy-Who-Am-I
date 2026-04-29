@@ -15,9 +15,8 @@ if "current_structure" not in st.session_state: st.session_state.current_structu
 if "round_start_time" not in st.session_state: st.session_state.round_start_time = time.time()
 if "game_stage" not in st.session_state: st.session_state.game_stage = "playing"
 
-# --- 2. RESEARCH UTILITIES (RETAINED) ---
+# --- 2. RESEARCH UTILITIES ---
 def generate_verification_hash(student_id, marks):
-    """Generates the unique research code at the end of the session."""
     raw_string = f"{student_id}-{marks}-{st.session_state.session_id}"
     hash_object = hashlib.sha256(raw_string.encode())
     return f"UOM-{hash_object.hexdigest()[:6].upper()}"
@@ -45,10 +44,7 @@ def call_professor(prompt_type, user_input="", structure=""):
     prompts = {
         "start": (f"You are a Senior Anatomy Professor. Select ONE anatomical structure from {random_region}. "
                   f"Provide 3 clues for {difficulty} level: Regional, Clinical, Surgical. [ANSWER: structure_name]"),
-        "verify": (f"Target: '{structure}'. Student Guess: '{user_input}'. "
-                   "Role: You are a clinical anatomy examiner. "
-                   "Task: Is the guess correct? Answer ONLY 'YES' or 'NO'. "
-                   "GUIDELINES: 1. Be STRICT on location. 2. Be FLEXIBLE on synonyms. 3. Accept common abbreviations. 4. Reject vague answers."),
+        "verify": (f"Target: '{structure}'. Student Guess: '{user_input}'. Role: Examiner. Answer ONLY 'YES' or 'NO'."),
         "hint": (f"The student guessed '{user_input}' for '{structure}' and was wrong. Provide ONE new specific clue."),
         "reveal": (f"The answer was {structure}. Provide a structured 'Educational Synthesis' for a {difficulty} level: "
                    "1. The Answer (with synonyms), 2. Synthesis of Clues, 3. A High-Yield Clinical Pearl.")
@@ -56,43 +52,33 @@ def call_professor(prompt_type, user_input="", structure=""):
 
     payload = {"contents": [{"role": "user", "parts": [{"text": prompts[prompt_type]}]}]}
 
-    # ROTATION LOGIC: Try every key until one succeeds
-# ADVANCED ROTATION: Try every key up to 2 times with a slight delay if busy
-    # This spreads the 13 students across the 1-minute quota window.
-    for attempt in range(len(available_keys) * 2):
-        key = available_keys[attempt % len(available_keys)]
+    # Try every key, shuffling on each attempt
+    random.shuffle(all_keys)
+    for key in all_keys:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={key}"
-        
         try:
             response = requests.post(url, json=payload, timeout=12)
             if response.status_code == 200:
-                data = response.json()
-                return data['candidates'][0]['content']['parts'][0]['text'].strip()
+                return response.json()['candidates'][0]['content']['parts'][0]['text'].strip()
             elif response.status_code == 429:
-                # Key is busy. Wait 1.5 seconds and try a different key.
-                time.sleep(1.5)
-                continue
-        except Exception:
+                continue # Rate limit: Try next key immediately
+        except:
             continue
             
-    return "The Professor is currently overwhelmed by students. Please wait 10 seconds and resubmit your guess."
+    return "Professor is currently overwhelmed. Please wait 5 seconds and click the button again."
+
 # --- 4. SIDEBAR & RESEARCH PORTAL ---
 st.set_page_config(page_title="Anatomy Who Am I", page_icon="🧬", layout="centered")
 
 with st.sidebar:
     st.title("🛡️ Research Portal")
     raw_id = st.text_input("University ID Number:", placeholder="e.g. 210XXX")
-    st.session_state.is_admin = (raw_id == "ADMIN789")
-    display_id = "RESEARCH_TEAM" if st.session_state.is_admin else raw_id
     st.session_state.difficulty = st.selectbox("Select Competency Level", ["Pre-clinical", "Clinical", "Post-graduate"])
     st.divider()
     st.metric(label="Current Session Marks", value=st.session_state.total_marks)
-    
-    if st.button("♻️ Reset Session"): 
-        st.session_state.clear()
-        st.rerun()
+    if st.button("♻️ Reset Session"): st.session_state.clear(); st.rerun()
 
-# --- 5. INTERFACE & CORE GAME LOGIC ---
+# --- 5. INTERFACE & CORE GAMEPLAY ---
 st.title("🧬 Anatomy: Who Am I?")
 
 if not raw_id:
