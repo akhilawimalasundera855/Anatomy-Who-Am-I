@@ -3,20 +3,22 @@ import time
 import random
 import google.generativeai as genai
 
-# --- 1. CONFIGURATION & KEY ROTATION ---
-# This function tries all your keys one by one until one works.
+# --- 1. CONFIGURATION & ERROR DIAGNOSTICS ---
 def call_gemini(prompt):
-    # List the names of the keys you have in your Streamlit Secrets
-    key_names = ["KEY1", "KEY2", "KEY3", "KEY4"] 
+    key_names = ["KEY1", "KEY2", "KEY3"] 
     available_keys = [st.secrets[k] for k in key_names if k in st.secrets]
     
-    random.shuffle(available_keys) # Spread the load across accounts
-    
+    if not available_keys:
+        return "❌ ERROR: No API keys found in Streamlit Secrets. Check the naming (KEY1, KEY2, etc.)"
+
+    random.shuffle(available_keys) 
+    last_error = ""
+
     for key in available_keys:
         try:
             genai.configure(api_key=key)
+            # We try both 1.5-flash and 2.5-flash (common in 2026)
             model = genai.GenerativeModel('gemini-1.5-flash')
-            # Disable safety filters to prevent silent empty responses
             response = model.generate_content(
                 prompt,
                 safety_settings={
@@ -27,32 +29,38 @@ def call_gemini(prompt):
                 }
             )
             return response.text
-        except Exception:
-            continue # Try the next key if this one fails/is busy
-    return "The Professor is currently busy with another student. Please wait 10 seconds and try again."
+        except Exception as e:
+            last_error = str(e)
+            time.sleep(0.5) # Short wait before next key
+            continue 
+            
+    # If all keys fail, tell the user the SPECIFIC error
+    return f"⚠️ SYSTEM ERROR: All keys failed. Last error: {last_error}"
 
-# --- 2. GAME LOGIC ---
+# --- 2. GAME UI ---
 st.set_page_config(page_title="Anatomy Shark", page_icon="🦈")
 st.title("🦈 Anatomy: Who Am I?")
 
-# Initialize session
 if "messages" not in st.session_state: st.session_state.messages = []
 if "attempts" not in st.session_state: st.session_state.attempts = 0
 if "current_structure" not in st.session_state: st.session_state.current_structure = None
 
-# Sidebar Setup
 with st.sidebar:
     st.header("Setup")
-    u_id = st.text_input("University ID / Name", placeholder="Enter to start...")
+    u_id = st.text_input("University ID / Name", key="u_id")
     level = st.selectbox("Level", ["Pre-clinical", "Clinical"])
     region = st.selectbox("Region", ["Thorax", "Abdomen", "Neuroanatomy", "MSK"])
+    if st.button("Reset Game"):
+        st.session_state.current_structure = None
+        st.session_state.messages = []
+        st.rerun()
 
-# Start Game Logic
+# Logic to start the first round
 if u_id and st.session_state.current_structure is None:
     pool = ["Heart", "Lungs", "Liver", "Spleen", "Kidney", "Stomach", "Pancreas", "Diaphragm", "Appendix"]
     st.session_state.current_structure = random.choice(pool)
     
-    prompt = f"Act as a strict anatomy professor. Give 3 short, challenging clues for the '{st.session_state.current_structure}' for a {level} student. Label them Regional, Clinical, and Surgical. Do not reveal the name."
+    prompt = f"Act as an anatomy professor. Give 3 short clues for the '{st.session_state.current_structure}' for a {level} student. Label them Regional, Clinical, and Surgical. Be brief."
     with st.spinner("Professor is thinking..."):
         first_message = call_gemini(prompt)
         st.session_state.messages.append({"role": "assistant", "content": first_message})
@@ -61,35 +69,23 @@ if u_id and st.session_state.current_structure is None:
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]): st.write(msg["content"])
 
-# User Input
-if prompt := st.chat_input("Enter your anatomical guess..."):
-    st.chat_message("user").write(prompt)
+# User Guess
+if prompt := st.chat_input("Your guess?"):
     st.session_state.messages.append({"role": "user", "content": prompt})
+    st.chat_message("user").write(prompt)
 
-    # Verify Logic
-    check_prompt = f"The structure is '{st.session_state.current_structure}'. The student guessed '{prompt}'. Is this correct? Reply ONLY 'YES' or 'NO'."
+    check_prompt = f"Structure: {st.session_state.current_structure}. Guess: {prompt}. Is it correct? Reply ONLY 'YES' or 'NO'."
     result = call_gemini(check_prompt)
 
     if "YES" in result.upper():
         st.balloons()
-        final_prompt = f"Explain the structure '{st.session_state.current_structure}' in 2 sentences. Include one 'High-Yield Clinical Pearl'."
-        explanation = call_gemini(final_prompt)
         st.success(f"CORRECT! It is the {st.session_state.current_structure}.")
-        st.write(explanation)
-        if st.button("Play Next Round"):
-            st.session_state.current_structure = None
-            st.session_state.messages = []
-            st.rerun()
+        pearl = call_gemini(f"Explain {st.session_state.current_structure} in 2 sentences with 1 clinical pearl.")
+        st.write(pearl)
     else:
         st.session_state.attempts += 1
         if st.session_state.attempts >= 3:
-            st.error(f"Out of tries! It was the {st.session_state.current_structure}.")
-            if st.button("Try a New Structure"):
-                st.session_state.current_structure = None
-                st.session_state.messages = []
-                st.session_state.attempts = 0
-                st.rerun()
+            st.error(f"Game Over! It was the {st.session_state.current_structure}.")
         else:
-            hint_prompt = f"The student guessed wrong. Give a very tiny hint for '{st.session_state.current_structure}' without naming it."
-            hint = call_gemini(hint_prompt)
-            st.warning(f"Incorrect ({st.session_state.attempts}/3). Hint: {hint}")
+            hint = call_gemini(f"Give a tiny hint for {st.session_state.current_structure} without naming it.")
+            st.warning(f"Wrong ({st.session_state.attempts}/3). Hint: {hint}")
