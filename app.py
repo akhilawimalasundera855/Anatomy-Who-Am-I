@@ -6,7 +6,7 @@ import random
 import hashlib
 from datetime import datetime
 
-# --- 1. SESSION INITIALIZATION ---
+# --- 1. RESEARCH STATE INITIALIZATION ---
 if "total_marks" not in st.session_state: st.session_state.total_marks = 0
 if "attempts" not in st.session_state: st.session_state.attempts = 0
 if "messages" not in st.session_state: st.session_state.messages = []
@@ -15,56 +15,59 @@ if "current_structure" not in st.session_state: st.session_state.current_structu
 if "round_start_time" not in st.session_state: st.session_state.round_start_time = time.time()
 if "game_stage" not in st.session_state: st.session_state.game_stage = "playing"
 
-# --- 2. RESEARCH UTILITIES (ORIGINAL LOGIC) ---
+# --- 2. RESEARCH UTILITIES (EXACT REPLICA) ---
 def generate_verification_hash(student_id, marks):
     raw_string = f"{student_id}-{marks}-{st.session_state.session_id}"
     hash_object = hashlib.sha256(raw_string.encode())
     return f"UOM-{hash_object.hexdigest()[:6].upper()}"
 
 def log_to_cloud(data_dict):
-    """Bypassed for the current live session to ensure speed and stability."""
+    """Placeholder to maintain original function structure; bypassed for stability."""
     pass
 
-# --- 3. THE CLINICALLY INTELLIGENT ENGINE (WITH MULTI-KEY FIX) ---
+# --- 3. PERFECT KEY ROTATOR & AI ENGINE ---
 def call_professor(prompt_type, user_input="", structure=""):
     difficulty = st.session_state.get('difficulty', 'Pre-clinical')
     
-    # Retrieves all keys from Secrets (KEY1, KEY2, KEY3)
+    # Retrieves KEY1, KEY2, KEY3 from Streamlit Secrets
     key_names = ["KEY1", "KEY2", "KEY3"]
     available_keys = [st.secrets[k] for k in key_names if k in st.secrets]
-    random.shuffle(available_keys)
+    random.shuffle(available_keys) # Ensures balanced load across your accounts
 
-    body_regions = ["Thorax", "Abdomen", "Neuroanatomy", "MSK", "Head and Neck"]
+    body_regions = ["Thorax", "Abdomen", "Pelvis", "Head and Neck", "Upper Limb", "Lower Limb", "Neuroanatomy", "Special Senses"]
     random_region = random.choice(body_regions)
 
     prompts = {
         "start": (f"You are a Senior Anatomy Professor. Select ONE anatomical structure from {random_region}. "
                   f"Provide 3 clues for {difficulty} level: Regional, Clinical, Surgical. [ANSWER: structure_name]"),
         "verify": (f"Target: '{structure}'. Student Guess: '{user_input}'. "
+                   "Role: You are a clinical anatomy examiner. "
                    "Task: Is the guess correct? Answer ONLY 'YES' or 'NO'. "
-                   "GUIDELINES: 1. Be STRICT on location. 2. Be FLEXIBLE on nomenclature (synonyms). 3. Accept common abbreviations. 4. Reject vague answers."),
-        "hint": (f"The student guessed '{user_input}' for '{structure}' and was wrong. Provide ONE new specific anatomical clue."),
+                   "GUIDELINES: 1. Be STRICT on location. 2. Be FLEXIBLE on synonyms. 3. Accept common abbreviations. 4. Reject vague answers."),
+        "hint": (f"The student guessed '{user_input}' for '{structure}' and was wrong. Provide ONE new specific clue."),
         "reveal": (f"The answer was {structure}. Provide a structured 'Educational Synthesis' for a {difficulty} level: "
                    "1. The Answer (with synonyms), 2. Synthesis of Clues, 3. A High-Yield Clinical Pearl.")
     }
 
     payload = {"contents": [{"role": "user", "parts": [{"text": prompts[prompt_type]}]}]}
 
-    # Rotates through keys automatically if one is busy or hits a limit
+    # ROTATION LOGIC: Try every key until one succeeds
     for key in available_keys:
-        # UPDATED FOR 2026: Using the high-capacity gemini-2.5-flash-lite model
+        # UPDATED FOR 2026: High-capacity Lite model for group sessions
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={key}"
         try:
             response = requests.post(url, json=payload, timeout=12)
-            data = response.json()
-            if 'candidates' in data:
+            if response.status_code == 200:
+                data = response.json()
                 return data['candidates'][0]['content']['parts'][0]['text'].strip()
-        except:
-            continue
+            elif response.status_code == 429:
+                continue # Key limit hit, move to next key immediately
+        except Exception:
+            continue # Network glitch, move to next key
             
-    return "⚠️ Professor is busy. Please resubmit your guess in 5 seconds."
+    return "⚠️ The Professor is temporarily busy. Please wait 10 seconds and resubmit."
 
-# --- 4. SIDEBAR & RESEARCH BACKDOOR ---
+# --- 4. SIDEBAR & RESEARCH PORTAL ---
 st.set_page_config(page_title="Anatomy Who Am I", page_icon="🧬", layout="centered")
 
 with st.sidebar:
@@ -76,21 +79,18 @@ with st.sidebar:
     st.divider()
     st.metric(label="Current Session Marks", value=st.session_state.total_marks)
     
-    if st.session_state.is_admin:
-        st.warning("🕵️ Researcher Mode Active")
-        st.info("Database logging is temporarily disabled for high-speed classroom performance.")
-        
     if st.button("♻️ Reset Session"): 
         st.session_state.clear()
         st.rerun()
 
-# --- 5. INTERFACE & GAME LOGIC ---
+# --- 5. INTERFACE & CORE GAME LOGIC ---
 st.title("🧬 Anatomy: Who Am I?")
 
 if not raw_id:
     st.info("👋 Please enter your ID in the sidebar to begin.")
     st.stop()
 
+# STAGE: START ROUND
 if st.session_state.game_stage != "finished":
     if not st.session_state.messages:
         with st.spinner("Professor is selecting a structure..."):
@@ -102,7 +102,7 @@ if st.session_state.game_stage != "finished":
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
-# --- 6. PLAYING LOGIC ---
+# STAGE: PLAYING
 if st.session_state.game_stage == "playing":
     if prompt := st.chat_input("Enter your anatomical guess..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
@@ -112,9 +112,8 @@ if st.session_state.game_stage == "playing":
             with st.spinner("Verifying..."):
                 is_correct_raw = call_professor("verify", user_input=prompt, structure=st.session_state.current_structure)
             
-            # Use original YES/NO detection logic
             if "YES" in is_correct_raw.upper() and "NO" not in is_correct_raw.upper():
-                # Original marks: [30, 20, 10]
+                # Original marks logic: 30 for 1st try, 20 for 2nd, 10 for 3rd
                 marks_earned = [30, 20, 10][min(st.session_state.attempts, 2)]
                 st.session_state.total_marks += marks_earned
                 st.success(f"✅ CORRECT! (+{marks_earned} marks)")
@@ -128,7 +127,7 @@ if st.session_state.game_stage == "playing":
                 
             else:
                 if st.session_state.attempts >= 2:
-                    st.error(f"❌ Failed. Target: {st.session_state.current_structure}")
+                    st.error(f"❌ Failed. The structure was the **{st.session_state.current_structure}**.")
                     explanation = call_professor("reveal", structure=st.session_state.current_structure)
                     st.markdown(explanation)
                     st.session_state.messages.append({"role": "assistant", "content": f"❌ FAILED. {explanation}"})
@@ -141,6 +140,7 @@ if st.session_state.game_stage == "playing":
                     st.info(f"💡 Hint: {new_hint}")
                     st.session_state.messages.append({"role": "assistant", "content": f"❌ Incorrect. Hint: {new_hint}"})
 
+# STAGE: SUMMARY
 elif st.session_state.game_stage == "summary":
     st.divider()
     col1, col2 = st.columns(2)
@@ -157,12 +157,13 @@ elif st.session_state.game_stage == "summary":
             st.session_state.game_stage = "finished"
             st.rerun()
 
+# STAGE: FINISHED
 elif st.session_state.game_stage == "finished":
     v_hash = generate_verification_hash(display_id, st.session_state.total_marks)
     st.success("Session Completed!")
     st.subheader("🏁 Performance Record")
     st.code(f"ID: {display_id} | Total Marks: {st.session_state.total_marks} | Hash: {v_hash}")
-    st.info("📸 Please take a screenshot for your evaluation form.")
+    st.info("📸 Please take a screenshot for your evaluation record.")
     if st.button("Start New Session"):
         st.session_state.clear()
         st.rerun()
