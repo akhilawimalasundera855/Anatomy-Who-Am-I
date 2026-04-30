@@ -25,34 +25,47 @@ def generate_verification_hash(student_id, marks):
 def call_professor(prompt_type, user_input="", structure=""):
     difficulty = st.session_state.get('difficulty', 'Pre-clinical')
     
-    # Flexible Key Retrieval: Handles both individual keys and lists
+    # Flexible Key Retrieval
     all_keys = []
     if "GEMINI_API_KEY" in st.secrets:
         val = st.secrets["GEMINI_API_KEY"]
         all_keys = list(val) if isinstance(val, list) else [val]
     
-    # Also check for individual KEY1, KEY2, KEY3
     for k in ["KEY1", "KEY2", "KEY3", "KEY4"]:
         if k in st.secrets: all_keys.append(st.secrets[k])
     
     if not all_keys:
         return "❌ ERROR: No API keys found in Streamlit Secrets."
 
+    # MASTER REGION LIST (Randomly Selected Internally)
     body_regions = ["Thorax", "Abdomen", "Pelvis", "Head and Neck", "Upper Limb", "Lower Limb", "Neuroanatomy", "Special Senses"]
     random_region = random.choice(body_regions)
 
+    # MASTER SYSTEM PROMPT v6.0 PERSONA
+    PERSONA_CORE = "You are the 'Clinical Anatomy Professor,' a strict, professional medical examiner[cite: 9]. You prioritize deductive reasoning and clinical correlates. "
+
+    # TASK-SPECIFIC PROMPT INJECTIONS
     prompts = {
-        "start": (f"You are a Senior Anatomy Professor. Select ONE anatomical structure from {random_region}. "
-                  f"Provide 3 clues for {difficulty} level: Regional, Clinical, Surgical. [ANSWER: structure_name]"),
-        "verify": (f"Target: '{structure}'. Student Guess: '{user_input}'. Role: Examiner. Answer ONLY 'YES' or 'NO'."),
-        "hint": (f"The student guessed '{user_input}' for '{structure}' and was wrong. Provide ONE new specific clue."),
-        "reveal": (f"The answer was {structure}. Provide a structured 'Educational Synthesis' for a {difficulty} level: "
-                   "1. The Answer (with synonyms), 2. Synthesis of Clues, 3. A High-Yield Clinical Pearl.")
+        "start": (f"{PERSONA_CORE} Internally, you have selected the region: {random_region}. "
+                  f"Select ONE high-yield anatomical structure from this region. "
+                  f"Provide 3 clues: 1. Regional (landmarks), 2. Clinical (pathology), 3. Surgical (approaches)[cite: 9, 10]. "
+                  f"CRITICAL: Do NOT name the region or the structure name in your clues. "
+                  f"Format: [Clues Text] [ANSWER: structure_name]"),
+        
+        "verify": (f"{PERSONA_CORE} Target: '{structure}'. Student Guess: '{user_input}'. "
+                   f"Acknowledge medical synonyms/shorthand (e.g. 'IJV' for 'Internal Jugular Vein')[cite: 9]. "
+                   f"Answer ONLY 'YES' or 'NO'."),
+        
+        "hint": (f"{PERSONA_CORE} The student guessed '{user_input}' for '{structure}' and was wrong. "
+                 f"Provide ONE NEW specific 'Blind Hint'. "
+                 f"RULE: DO NOT repeat previous clues. DO NOT name the target or the region. Refer to it only as 'it' or 'the structure'."),
+        
+        "reveal": (f"{PERSONA_CORE} The correct structure was {structure}. Provide a structured 'Educational Synthesis'[cite: 4, 9]: "
+                   f"1. The Identification (with synonyms), 2. A 2-3 sentence 'High-Yield Clinical Pearl' linking this anatomy to real-world clinical or surgical practice[cite: 4, 9].")
     }
 
     payload = {"contents": [{"role": "user", "parts": [{"text": prompts[prompt_type]}]}]}
 
-    # Try every key, shuffling on each attempt
     random.shuffle(all_keys)
     for key in all_keys:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={key}"
@@ -61,7 +74,7 @@ def call_professor(prompt_type, user_input="", structure=""):
             if response.status_code == 200:
                 return response.json()['candidates'][0]['content']['parts'][0]['text'].strip()
             elif response.status_code == 429:
-                continue # Rate limit: Try next key immediately
+                continue 
         except:
             continue
             
@@ -87,7 +100,6 @@ if not raw_id:
 
 # STAGE: INITIALIZATION
 if st.session_state.game_stage == "playing" and st.session_state.current_structure is None:
-    # Adding a random stagger (0.5 to 2.5s) to prevent concurrent request collisions
     time.sleep(random.uniform(0.5, 2.5))
     with st.spinner("Professor is preparing your clues..."):
         full_res = call_professor("start")
@@ -113,6 +125,7 @@ if st.session_state.game_stage == "playing" and st.session_state.current_structu
                 is_correct_raw = call_professor("verify", user_input=prompt, structure=st.session_state.current_structure)
             
             if "YES" in is_correct_raw.upper() and "NO" not in is_correct_raw.upper():
+                # Weighted Scoring: 30, 20, 10 marks
                 marks_earned = [30, 20, 10][min(st.session_state.attempts, 2)]
                 st.session_state.total_marks += marks_earned
                 st.success(f"✅ CORRECT! (+{marks_earned} marks)")
