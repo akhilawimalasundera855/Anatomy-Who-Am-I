@@ -21,8 +21,9 @@ def generate_verification_hash(student_id, marks):
     hash_object = hashlib.sha256(raw_string.encode())
     return f"UOM-{hash_object.hexdigest()[:6].upper()}"
 
-# --- 3. ROBUST AI ENGINE (LENIENT VERIFICATION v6.1) ---
-def call_professor(prompt_type, user_input="", structure=""):
+
+# --- 3. ROBUST AI ENGINE (ADAPTIVE PROFESSOR v7.0) ---
+def call_professor(prompt_type, user_input="", structure="", is_first=False):
     difficulty = st.session_state.get('difficulty', 'Pre-clinical')
     
     # Flexible Key Retrieval
@@ -30,39 +31,52 @@ def call_professor(prompt_type, user_input="", structure=""):
     if "GEMINI_API_KEY" in st.secrets:
         val = st.secrets["GEMINI_API_KEY"]
         all_keys = list(val) if isinstance(val, list) else [val]
-    
     for k in ["KEY1", "KEY2", "KEY3", "KEY4"]:
         if k in st.secrets: all_keys.append(st.secrets[k])
     
     if not all_keys:
         return "❌ ERROR: No API keys found in Streamlit Secrets."
 
-    # Internal Region Selection (Secret)
     body_regions = ["Thorax", "Abdomen", "Pelvis", "Head and Neck", "Upper Limb", "Lower Limb", "Neuroanatomy", "Special Senses"]
     random_region = random.choice(body_regions)
 
-    # Master Persona with Lenience Logic
-    PERSONA = "You are the 'Clinical Anatomy Professor,' a strict but fair medical examiner[cite: 9]. "
+    # Master Persona: Friendly but Strict Senior Professor
+    PERSONA = (
+        "You are a Senior Clinical Anatomy Professor. Your demeanor is friendly, encouraging, and professional, "
+        "yet you remain a strict academic examiner[cite: 9]. You value precise deductive reasoning and high-end clinical relevance."
+    )
+
+    # Gameplay Explanation (Only for the first round)
+    intro_logic = ""
+    if is_first:
+        intro_logic = (
+            "This is the student's first game. Briefly and warmly welcome them to 'Anatomy: Who Am I?' game session "
+            "Explain that you will provide three clues, and they have three attempts to guess the structure. "
+            "Encourage them to think clinically before you begin. "
+        )
 
     prompts = {
-        "start": (f"{PERSONA} INTERNAL SELECTION (SECRET): Select ONE high-yield anatomical structure from the {random_region}[cite: 9]. "
-                  f"Provide exactly 3 clues for {difficulty} level: Regional (landmarks), Clinical (pathology), and Surgical (approaches)[cite: 9, 10]. "
-                  f"CRITICAL RULE: DO NOT disclose the region name or the structure name. "
+        "start": (f"{PERSONA} {intro_logic} "
+                  f"INTERNAL SELECTION (SECRET): Select ONE high-yield anatomical structure from the {random_region}[cite: 9]. "
+                  f"Provide 3 high-end academic clues for {difficulty} level exactly under these subheadings: "
+                  f"### **Regional anatomy**\n### **clinical anatomy**\n### **Surgical anatomy**\n"
+                  f"CRITICAL: Do NOT reveal the region name or structure name yet. "
                   f"Format: [Clues Text] [ANSWER: structure_name]"),
         
         "verify": (f"{PERSONA} Target: '{structure}'. Student Guess: '{user_input}'. "
-                   f"Evaluation Logic: You MUST accept answers that are functionally correct even if they are common clinical shorthand (e.g., 'biceps' for 'biceps brachii', 'supraspinatus' for 'supraspinatus tendon') or contain minor spelling errors. "
-                   f"If the guess clearly identifies the target structure, respond with 'YES'. Otherwise, respond 'NO'."),
+                   f"Evaluation Logic: You MUST accept the answer if: "
+                   f"1. It is the standard abbreviated form (e.g., 'IJV' for Internal Jugular Vein). "
+                   f"2. It contains minor spelling errors (1-2 letters changed). "
+                   f"3. It is missing descriptive terms like 'artery', 'muscle', 'tendon', or 'nerve' but the core name is correct (e.g., 'Supraspinatus' for Supraspinatus Tendon). "
+                   f"Respond ONLY with 'YES' if it meets these criteria, otherwise 'NO'."),
         
         "hint": (f"{PERSONA} The student guessed '{user_input}' for '{structure}' and was wrong. "
-                 f"Provide ONE NEW specific 'Blind Hint'. "
-                 f"STRICT RULE: Do NOT repeat previous clues. DO NOT name the target structure or the region. "
-                 f"Refer to it only as 'it' or 'the structure'."),
+                 f"Provide ONE NEW specific and anatomically accurate 'Blind Hint' in your friendly, academic tone. "
+                 f"DO NOT repeat previous clues or name the target/region."),
         
-        "reveal": (f"{PERSONA} The target structure was '{structure}'. "
-                   f"Provide a structured 'Educational Synthesis' for a {difficulty} level[cite: 4, 9]: "
-                   f"1. Formal Identification: State the full, formal anatomical name and its common synonyms. If the student used shorthand or misspelled the answer, politely reinforce the correct formal terminology here (e.g., 'Correct! While you identified the supraspinatus, the formal term is the Supraspinatus Tendon'). "
-                   f"2. A 2-3 sentence 'High-Yield Clinical Pearl' linking this anatomy to clinical practice, surgical pathology, or signs[cite: 4, 9].")
+        "reveal": (f"{PERSONA} The answer was '{structure}'. Provide a structured 'Educational Synthesis'[cite: 4, 9]: "
+                   f"1. The Formal Identification (acknowledge if their shorthand/spelling was close but provide the full standard name). "
+                   f"2. A 2-3 sentence 'High-Yield Clinical Pearl'[cite: 4, 9].")
     }
 
     payload = {"contents": [{"role": "user", "parts": [{"text": prompts[prompt_type]}]}]}
@@ -79,7 +93,7 @@ def call_professor(prompt_type, user_input="", structure=""):
         except:
             continue
             
-    return "Professor is currently busy. Please wait 5 seconds and click the button again."
+    return "Professor is currently overwhelmed. Please wait 5 seconds and click the button again."
 
 # --- 4. SIDEBAR & RESEARCH PORTAL ---
 st.set_page_config(page_title="Anatomy Who Am I", page_icon="🧬", layout="centered")
@@ -99,14 +113,19 @@ if not raw_id:
     st.info("👋 Please enter your ID in the sidebar to begin.")
     st.stop()
 
+
 # STAGE: INITIALIZATION
 if st.session_state.game_stage == "playing" and st.session_state.current_structure is None:
     time.sleep(random.uniform(0.5, 2.5))
     with st.spinner("Professor is preparing your clues..."):
-        full_res = call_professor("start")
+        # Pass the first_round flag to the professor
+        full_res = call_professor("start", is_first=st.session_state.is_first_round)
+        
         if "[ANSWER:" in full_res:
             st.session_state.current_structure = full_res.split("[ANSWER:")[1].split("]")[0].strip()
             st.session_state.messages.append({"role": "assistant", "content": full_res.split("[ANSWER:")[0].strip()})
+            # Flip the flag so the intro only happens once
+            st.session_state.is_first_round = False 
         else:
             st.error(full_res)
             if st.button("Retry Clue Generation"): st.rerun()
