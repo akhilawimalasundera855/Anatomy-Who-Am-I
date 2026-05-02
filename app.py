@@ -14,6 +14,8 @@ if "session_id" not in st.session_state: st.session_state.session_id = str(uuid.
 if "current_structure" not in st.session_state: st.session_state.current_structure = None
 if "round_start_time" not in st.session_state: st.session_state.round_start_time = time.time()
 if "game_stage" not in st.session_state: st.session_state.game_stage = "playing"
+# BUG FIX: Initializing the missing key
+if "is_first_round" not in st.session_state: st.session_state.is_first_round = True
 
 # --- 2. RESEARCH UTILITIES ---
 def generate_verification_hash(student_id, marks):
@@ -21,12 +23,11 @@ def generate_verification_hash(student_id, marks):
     hash_object = hashlib.sha256(raw_string.encode())
     return f"UOM-{hash_object.hexdigest()[:6].upper()}"
 
-
 # --- 3. ROBUST AI ENGINE (ADAPTIVE PROFESSOR v7.0) ---
 def call_professor(prompt_type, user_input="", structure="", is_first=False):
     difficulty = st.session_state.get('difficulty', 'Pre-clinical')
     
-    # Flexible Key Retrieval
+    # API Key Retrieval
     all_keys = []
     if "GEMINI_API_KEY" in st.secrets:
         val = st.secrets["GEMINI_API_KEY"]
@@ -43,21 +44,21 @@ def call_professor(prompt_type, user_input="", structure="", is_first=False):
     # Master Persona: Friendly but Strict Senior Professor
     PERSONA = (
         "You are a Senior Clinical Anatomy Professor. Your demeanor is friendly, encouraging, and professional, "
-        "yet you remain a strict academic examiner[cite: 9]. You value precise deductive reasoning and high-end clinical relevance."
+        "yet you remain a strict academic examiner. You value precise deductive reasoning and high-end clinical relevance."
     )
 
-    # Gameplay Explanation (Only for the first round)
+    # Gameplay Explanation logic
     intro_logic = ""
     if is_first:
         intro_logic = (
-            "This is the student's first game. Briefly and warmly welcome them to 'Anatomy: Who Am I?' game session "
+            "This is the student's first game. Briefly and warmly welcome them to 'Anatomy: Who Am I?' "
             "Explain that you will provide three clues, and they have three attempts to guess the structure. "
             "Encourage them to think clinically before you begin. "
         )
 
     prompts = {
         "start": (f"{PERSONA} {intro_logic} "
-                  f"INTERNAL SELECTION (SECRET): Select ONE high-yield anatomical structure from the {random_region}[cite: 9]. "
+                  f"INTERNAL SELECTION (SECRET): Select ONE high-yield anatomical structure from the {random_region}. "
                   f"Provide 3 high-end academic clues for {difficulty} level exactly under these subheadings: "
                   f"### **Regional anatomy**\n### **clinical anatomy**\n### **Surgical anatomy**\n"
                   f"CRITICAL: Do NOT reveal the region name or structure name yet. "
@@ -71,12 +72,12 @@ def call_professor(prompt_type, user_input="", structure="", is_first=False):
                    f"Respond ONLY with 'YES' if it meets these criteria, otherwise 'NO'."),
         
         "hint": (f"{PERSONA} The student guessed '{user_input}' for '{structure}' and was wrong. "
-                 f"Provide ONE NEW specific and anatomically accurate 'Blind Hint' in your friendly, academic tone. "
+                 f"Provide ONE NEW specific 'Blind Hint' in your friendly, academic tone. "
                  f"DO NOT repeat previous clues or name the target/region."),
         
-        "reveal": (f"{PERSONA} The answer was '{structure}'. Provide a structured 'Educational Synthesis'[cite: 4, 9]: "
+        "reveal": (f"{PERSONA} The answer was '{structure}'. Provide a structured 'Educational Synthesis': "
                    f"1. The Formal Identification (acknowledge if their shorthand/spelling was close but provide the full standard name). "
-                   f"2. A 2-3 sentence 'High-Yield Clinical Pearl'[cite: 4, 9].")
+                   f"2. A 2-3 sentence 'High-Yield Clinical Pearl'.")
     }
 
     payload = {"contents": [{"role": "user", "parts": [{"text": prompts[prompt_type]}]}]}
@@ -88,10 +89,8 @@ def call_professor(prompt_type, user_input="", structure="", is_first=False):
             response = requests.post(url, json=payload, timeout=12)
             if response.status_code == 200:
                 return response.json()['candidates'][0]['content']['parts'][0]['text'].strip()
-            elif response.status_code == 429:
-                continue 
-        except:
-            continue
+            elif response.status_code == 429: continue 
+        except: continue
             
     return "Professor is currently overwhelmed. Please wait 5 seconds and click the button again."
 
@@ -113,19 +112,16 @@ if not raw_id:
     st.info("👋 Please enter your ID in the sidebar to begin.")
     st.stop()
 
-
 # STAGE: INITIALIZATION
 if st.session_state.game_stage == "playing" and st.session_state.current_structure is None:
     time.sleep(random.uniform(0.5, 2.5))
     with st.spinner("Professor is preparing your clues..."):
-        # Pass the first_round flag to the professor
+        # Correctly passing the is_first argument
         full_res = call_professor("start", is_first=st.session_state.is_first_round)
-        
         if "[ANSWER:" in full_res:
             st.session_state.current_structure = full_res.split("[ANSWER:")[1].split("]")[0].strip()
             st.session_state.messages.append({"role": "assistant", "content": full_res.split("[ANSWER:")[0].strip()})
-            # Flip the flag so the intro only happens once
-            st.session_state.is_first_round = False 
+            st.session_state.is_first_round = False # Update flag after first round
         else:
             st.error(full_res)
             if st.button("Retry Clue Generation"): st.rerun()
@@ -145,7 +141,6 @@ if st.session_state.game_stage == "playing" and st.session_state.current_structu
                 is_correct_raw = call_professor("verify", user_input=prompt, structure=st.session_state.current_structure)
             
             if "YES" in is_correct_raw.upper() and "NO" not in is_correct_raw.upper():
-                # Weighted Scoring: 30, 20, 10 marks
                 marks_earned = [30, 20, 10][min(st.session_state.attempts, 2)]
                 st.session_state.total_marks += marks_earned
                 st.success(f"✅ CORRECT! (+{marks_earned} marks)")
@@ -159,7 +154,7 @@ if st.session_state.game_stage == "playing" and st.session_state.current_structu
                 
             else:
                 if st.session_state.attempts >= 2:
-                    st.error(f"❌ Failed. Target: {st.session_state.current_structure}")
+                    st.error(f"❌ Failed.")
                     explanation = call_professor("reveal", structure=st.session_state.current_structure)
                     st.markdown(explanation)
                     st.session_state.messages.append({"role": "assistant", "content": f"❌ FAILED. {explanation}"})
