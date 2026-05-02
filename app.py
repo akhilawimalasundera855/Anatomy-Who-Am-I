@@ -21,7 +21,7 @@ def generate_verification_hash(student_id, marks):
     hash_object = hashlib.sha256(raw_string.encode())
     return f"UOM-{hash_object.hexdigest()[:6].upper()}"
 
-# --- 3. ROBUST AI ENGINE (STAGGERED ROTATION) ---
+# --- 3. ROBUST AI ENGINE (LENIENT VERIFICATION v6.1) ---
 def call_professor(prompt_type, user_input="", structure=""):
     difficulty = st.session_state.get('difficulty', 'Pre-clinical')
     
@@ -37,31 +37,32 @@ def call_professor(prompt_type, user_input="", structure=""):
     if not all_keys:
         return "❌ ERROR: No API keys found in Streamlit Secrets."
 
-    # MASTER REGION LIST (Randomly Selected Internally)
+    # Internal Region Selection (Secret)
     body_regions = ["Thorax", "Abdomen", "Pelvis", "Head and Neck", "Upper Limb", "Lower Limb", "Neuroanatomy", "Special Senses"]
     random_region = random.choice(body_regions)
 
-    # MASTER SYSTEM PROMPT v6.0 PERSONA
-    PERSONA_CORE = "You are the 'Clinical Anatomy Professor,' a strict, professional medical examiner[cite: 9]. You prioritize deductive reasoning and clinical correlates. "
+    # Master Persona with Lenience Logic
+    PERSONA = "You are the 'Clinical Anatomy Professor,' a strict but fair medical examiner[cite: 9]. "
 
-    # TASK-SPECIFIC PROMPT INJECTIONS
     prompts = {
-        "start": (f"{PERSONA_CORE} Internally, you have selected the region: {random_region}. "
-                  f"Select ONE high-yield anatomical structure from this region. "
-                  f"Provide 3 clues: 1. Regional (landmarks), 2. Clinical (pathology), 3. Surgical (approaches)[cite: 9, 10]. "
-                  f"CRITICAL: Do NOT name the region or the structure name in your clues. "
+        "start": (f"{PERSONA} INTERNAL SELECTION (SECRET): Select ONE high-yield anatomical structure from the {random_region}[cite: 9]. "
+                  f"Provide exactly 3 clues for {difficulty} level: Regional (landmarks), Clinical (pathology), and Surgical (approaches)[cite: 9, 10]. "
+                  f"CRITICAL RULE: DO NOT disclose the region name or the structure name. "
                   f"Format: [Clues Text] [ANSWER: structure_name]"),
         
-        "verify": (f"{PERSONA_CORE} Target: '{structure}'. Student Guess: '{user_input}'. "
-                   f"Acknowledge medical synonyms/shorthand (e.g. 'IJV' for 'Internal Jugular Vein')[cite: 9]. "
-                   f"Answer ONLY 'YES' or 'NO'."),
+        "verify": (f"{PERSONA} Target: '{structure}'. Student Guess: '{user_input}'. "
+                   f"Evaluation Logic: You MUST accept answers that are functionally correct even if they are common clinical shorthand (e.g., 'biceps' for 'biceps brachii', 'supraspinatus' for 'supraspinatus tendon') or contain minor spelling errors. "
+                   f"If the guess clearly identifies the target structure, respond with 'YES'. Otherwise, respond 'NO'."),
         
-        "hint": (f"{PERSONA_CORE} The student guessed '{user_input}' for '{structure}' and was wrong. "
+        "hint": (f"{PERSONA} The student guessed '{user_input}' for '{structure}' and was wrong. "
                  f"Provide ONE NEW specific 'Blind Hint'. "
-                 f"RULE: DO NOT repeat previous clues. DO NOT name the target or the region. Refer to it only as 'it' or 'the structure'."),
+                 f"STRICT RULE: Do NOT repeat previous clues. DO NOT name the target structure or the region. "
+                 f"Refer to it only as 'it' or 'the structure'."),
         
-        "reveal": (f"{PERSONA_CORE} The correct structure was {structure}. Provide a structured 'Educational Synthesis'[cite: 4, 9]: "
-                   f"1. The Identification (with synonyms), 2. A 2-3 sentence 'High-Yield Clinical Pearl' linking this anatomy to real-world clinical or surgical practice[cite: 4, 9].")
+        "reveal": (f"{PERSONA} The target structure was '{structure}'. "
+                   f"Provide a structured 'Educational Synthesis' for a {difficulty} level[cite: 4, 9]: "
+                   f"1. Formal Identification: State the full, formal anatomical name and its common synonyms. If the student used shorthand or misspelled the answer, politely reinforce the correct formal terminology here (e.g., 'Correct! While you identified the supraspinatus, the formal term is the Supraspinatus Tendon'). "
+                   f"2. A 2-3 sentence 'High-Yield Clinical Pearl' linking this anatomy to clinical practice, surgical pathology, or signs[cite: 4, 9].")
     }
 
     payload = {"contents": [{"role": "user", "parts": [{"text": prompts[prompt_type]}]}]}
@@ -78,7 +79,7 @@ def call_professor(prompt_type, user_input="", structure=""):
         except:
             continue
             
-    return "Professor is currently overwhelmed. Please wait 5 seconds and click the button again."
+    return "Professor is currently busy. Please wait 5 seconds and click the button again."
 
 # --- 4. SIDEBAR & RESEARCH PORTAL ---
 st.set_page_config(page_title="Anatomy Who Am I", page_icon="🧬", layout="centered")
